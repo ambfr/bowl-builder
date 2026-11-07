@@ -1,10 +1,20 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { api } from "./api";
+import { useAuth } from "./auth";
 import BowlPicture from "./BowlPicture";
 import { swatchFor } from "./palette";
 
 const SIZES = ["SMALL", "MEDIUM", "LARGE"];
 const rupees = (n) => "Rs " + Number(n).toFixed(2);
+
+function Check() {
+  return (
+    <svg viewBox="0 0 12 12" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M2.5 6.5l2.5 2.5 4.5-5.5" />
+    </svg>
+  );
+}
 
 function Row({ item, selected, onClick }) {
   const out = item.stock < 1;
@@ -24,11 +34,11 @@ function Row({ item, selected, onClick }) {
       <span className="text-sm text-ink/60">{out ? "Sold out" : rupees(item.price)}</span>
       <span
         className={
-          "flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-xs transition " +
+          "flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition " +
           (selected ? "border-berry bg-berry text-white" : "border-line text-transparent")
         }
       >
-        ✓
+        <Check />
       </span>
     </button>
   );
@@ -47,6 +57,9 @@ function Group({ title, hint, children }) {
 }
 
 export default function Builder() {
+  const { user, token } = useAuth();
+  const navigate = useNavigate();
+
   const [ingredients, setIngredients] = useState([]);
   const [loadError, setLoadError] = useState("");
   const [baseId, setBaseId] = useState(null);
@@ -56,12 +69,18 @@ export default function Builder() {
   const [promo, setPromo] = useState("");
   const [pricing, setPricing] = useState(null);
   const [priceError, setPriceError] = useState("");
+  const [placing, setPlacing] = useState(false);
+  const [orderError, setOrderError] = useState("");
 
-  useEffect(() => {
+  const loadIngredients = useCallback(() => {
     api("/api/ingredients")
       .then((list) => setIngredients(list.sort((a, b) => a.id - b.id)))
       .catch((e) => setLoadError(e.message));
   }, []);
+
+  useEffect(() => {
+    loadIngredients();
+  }, [loadIngredients]);
 
   const byCategory = (c) => ingredients.filter((i) => i.category === c);
   const byId = useMemo(() => Object.fromEntries(ingredients.map((i) => [i.id, i])), [ingredients]);
@@ -93,116 +112,148 @@ export default function Builder() {
   const toggle = (list, setList, id) =>
     setList(list.includes(id) ? list.filter((x) => x !== id) : [...list, id]);
 
+  async function placeOrder() {
+    if (!user) {
+      navigate("/login");
+      return;
+    }
+    setPlacing(true);
+    setOrderError("");
+    try {
+      await api("/api/orders", {
+        method: "POST",
+        token,
+        body: { baseId, toppingIds, drizzleIds, size, promoCode: promo.trim() || null },
+      });
+      navigate("/orders");
+    } catch (e) {
+      setOrderError(e.message);
+      loadIngredients(); // stock may have changed while the person was choosing
+    } finally {
+      setPlacing(false);
+    }
+  }
+
   const base = byId[baseId];
   const toppings = toppingIds.map((id) => byId[id]).filter(Boolean);
   const drizzles = drizzleIds.map((id) => byId[id]).filter(Boolean);
-  const discounted = pricing && Number(pricing.total) < Number(pricing.subtotal) * (size === "SMALL" ? 0.8 : size === "LARGE" ? 1.3 : 1) - 0.005;
+  const sizeFactor = size === "SMALL" ? 0.8 : size === "LARGE" ? 1.3 : 1;
+  const discounted = pricing && Number(pricing.total) < Number(pricing.subtotal) * sizeFactor - 0.005;
 
   return (
-    <div>
+    <main className="mx-auto grid max-w-6xl gap-12 px-6 py-10 lg:grid-cols-[1.1fr_1fr]">
+      <div className="lg:sticky lg:top-8 lg:self-start">
+        <BowlPicture base={base} toppings={toppings} drizzles={drizzles} size={size} />
 
-      <main className="mx-auto grid max-w-6xl gap-12 px-6 py-10 lg:grid-cols-[1.1fr_1fr]">
-        <div className="lg:sticky lg:top-8 lg:self-start">
-          <BowlPicture base={base} toppings={toppings} drizzles={drizzles} size={size} />
+        <div className="mx-auto mt-6 max-w-md">
+          {priceError && <p className="mb-3 text-sm text-red-700">{priceError}</p>}
 
-          <div className="mx-auto mt-6 max-w-md">
-            {priceError && <p className="mb-3 text-sm text-red-700">{priceError}</p>}
-
-            {pricing ? (
-              <>
-                <div className="flex items-end justify-between border-t border-line pt-4">
-                  <span className="font-display text-xl text-ink/70">Total</span>
-                  <span className="font-display text-5xl tracking-tight">{rupees(pricing.total)}</span>
+          {pricing ? (
+            <>
+              <div className="flex items-end justify-between border-t border-line pt-4">
+                <span className="font-display text-xl text-ink/70">Total</span>
+                <span className="font-display text-5xl tracking-tight">{rupees(pricing.total)}</span>
+              </div>
+              <div className="mt-4 grid grid-cols-3 divide-x divide-line text-center">
+                <div>
+                  <div className="font-semibold">{pricing.nutrition.calories}</div>
+                  <div className="text-sm text-ink/50">kcal</div>
                 </div>
-                <div className="mt-4 grid grid-cols-3 divide-x divide-line text-center">
-                  <div>
-                    <div className="font-semibold">{pricing.nutrition.calories}</div>
-                    <div className="text-sm text-ink/50">kcal</div>
-                  </div>
-                  <div>
-                    <div className="font-semibold">{pricing.nutrition.proteinG} g</div>
-                    <div className="text-sm text-ink/50">protein</div>
-                  </div>
-                  <div>
-                    <div className="font-semibold">{pricing.nutrition.sugarG} g</div>
-                    <div className="text-sm text-ink/50">sugar</div>
-                  </div>
+                <div>
+                  <div className="font-semibold">{pricing.nutrition.proteinG} g</div>
+                  <div className="text-sm text-ink/50">protein</div>
                 </div>
-                {discounted && (
-                  <p className="mt-3 text-center text-sm text-berry">Promo code applied</p>
-                )}
-              </>
-            ) : (
-              !priceError && (
-                <p className="border-t border-line pt-4 text-center text-ink/50">
-                  Pick a base and your price will appear here.
+                <div>
+                  <div className="font-semibold">{pricing.nutrition.sugarG} g</div>
+                  <div className="text-sm text-ink/50">sugar</div>
+                </div>
+              </div>
+              {discounted && <p className="mt-3 text-center text-sm text-berry">Promo code applied</p>}
+
+              <button
+                type="button"
+                onClick={placeOrder}
+                disabled={placing}
+                className="mt-6 w-full rounded-full bg-berry py-3.5 font-medium text-white transition hover:opacity-90 disabled:opacity-50"
+              >
+                {placing ? "Placing order..." : user ? "Place order" : "Sign in to order"}
+              </button>
+              {orderError && (
+                <p role="alert" className="mt-3 text-center text-sm text-red-700">
+                  {orderError}
                 </p>
-              )
-            )}
-          </div>
+              )}
+            </>
+          ) : (
+            !priceError && (
+              <p className="border-t border-line pt-4 text-center text-ink/50">
+                Pick a base and your price will appear here.
+              </p>
+            )
+          )}
         </div>
+      </div>
 
-        <div className="space-y-9">
-          {loadError && <p className="text-red-700">Could not load ingredients: {loadError}</p>}
+      <div className="space-y-9">
+        {loadError && <p className="text-red-700">Could not load ingredients: {loadError}</p>}
 
-          <Group title="Base" hint="Pick one">
-            {byCategory("BASE").map((i) => (
-              <Row key={i.id} item={i} selected={baseId === i.id} onClick={() => setBaseId(i.id)} />
-            ))}
-          </Group>
+        <Group title="Base" hint="Pick one">
+          {byCategory("BASE").map((i) => (
+            <Row key={i.id} item={i} selected={baseId === i.id} onClick={() => setBaseId(i.id)} />
+          ))}
+        </Group>
 
-          <Group title="Toppings" hint="As many as you like">
-            {byCategory("TOPPING").map((i) => (
-              <Row
-                key={i.id}
-                item={i}
-                selected={toppingIds.includes(i.id)}
-                onClick={() => toggle(toppingIds, setToppingIds, i.id)}
-              />
-            ))}
-          </Group>
-
-          <Group title="Drizzles" hint="As many as you like">
-            {byCategory("DRIZZLE").map((i) => (
-              <Row
-                key={i.id}
-                item={i}
-                selected={drizzleIds.includes(i.id)}
-                onClick={() => toggle(drizzleIds, setDrizzleIds, i.id)}
-              />
-            ))}
-          </Group>
-
-          <Group title="Size">
-            <div className="mt-2 inline-flex rounded-full border border-line bg-white p-1">
-              {SIZES.map((s) => (
-                <button
-                  key={s}
-                  type="button"
-                  onClick={() => setSize(s)}
-                  aria-pressed={size === s}
-                  className={
-                    "rounded-full px-5 py-1.5 text-sm font-medium transition " +
-                    (size === s ? "bg-ink text-white" : "text-ink/70 hover:text-ink")
-                  }
-                >
-                  {s[0] + s.slice(1).toLowerCase()}
-                </button>
-              ))}
-            </div>
-          </Group>
-
-          <Group title="Promo code">
-            <input
-              value={promo}
-              onChange={(e) => setPromo(e.target.value)}
-              placeholder="Have a code?"
-              aria-label="Promo code"
-              className="mt-2 w-full border-0 border-b border-line bg-transparent py-2 uppercase placeholder:normal-case placeholder:text-ink/40 focus:border-berry focus:outline-none"
+        <Group title="Toppings" hint="As many as you like">
+          {byCategory("TOPPING").map((i) => (
+            <Row
+              key={i.id}
+              item={i}
+              selected={toppingIds.includes(i.id)}
+              onClick={() => toggle(toppingIds, setToppingIds, i.id)}
             />
-          </Group>
-        </div>
-      </main>
-    </div>
+          ))}
+        </Group>
+
+        <Group title="Drizzles" hint="As many as you like">
+          {byCategory("DRIZZLE").map((i) => (
+            <Row
+              key={i.id}
+              item={i}
+              selected={drizzleIds.includes(i.id)}
+              onClick={() => toggle(drizzleIds, setDrizzleIds, i.id)}
+            />
+          ))}
+        </Group>
+
+        <Group title="Size">
+          <div className="mt-2 inline-flex rounded-full border border-line bg-white p-1">
+            {SIZES.map((s) => (
+              <button
+                key={s}
+                type="button"
+                onClick={() => setSize(s)}
+                aria-pressed={size === s}
+                className={
+                  "rounded-full px-5 py-1.5 text-sm font-medium transition " +
+                  (size === s ? "bg-ink text-white" : "text-ink/70 hover:text-ink")
+                }
+              >
+                {s[0] + s.slice(1).toLowerCase()}
+              </button>
+            ))}
+          </div>
+        </Group>
+
+        <Group title="Promo code">
+          <input
+            value={promo}
+            onChange={(e) => setPromo(e.target.value)}
+            placeholder="Have a code?"
+            aria-label="Promo code"
+            className="mt-2 w-full border-0 border-b border-line bg-transparent py-2 uppercase placeholder:normal-case placeholder:text-ink/40 focus:border-berry focus:outline-none"
+          />
+        </Group>
+      </div>
+    </main>
   );
 }

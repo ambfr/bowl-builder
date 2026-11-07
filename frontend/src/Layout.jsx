@@ -12,6 +12,9 @@ export default function Layout() {
         <nav className="flex items-baseline gap-5 text-sm">
           {user ? (
             <>
+              <Link to="/orders" className="text-ink/70 hover:text-ink">
+                My orders
+              </Link>
               <span className="text-ink/60">Hi, {user.name}</span>
               <button type="button" onClick={logout} className="font-medium text-berry hover:underline">
                 Sign out
