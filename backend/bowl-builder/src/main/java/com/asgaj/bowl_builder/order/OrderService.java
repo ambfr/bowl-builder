@@ -47,6 +47,10 @@ public class OrderService {
             chosen.addAll(ingredients.findAllById(req.drizzleIds()));
         }
 
+        // Throws 409 if anything is out of stock. Because this method is @Transactional,
+        // an exception rolls back every change made so far, so the order is all-or-nothing.
+        deductStock(chosen);
+
         CustomerOrder order = new CustomerOrder();
         order.setUserId(userId);
         order.setSize(req.size());
@@ -61,6 +65,16 @@ public class OrderService {
             order.getItems().add(new OrderItem(i.getId(), i.getName(), i.getCategory(), i.getPrice()));
         }
         return toResponse(orders.save(order));
+    }
+
+    private void deductStock(List<Ingredient> chosen) {
+        for (Ingredient i : chosen) {
+            if (i.getStock() < 1) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, i.getName() + " is out of stock");
+            }
+            i.setStock(i.getStock() - 1);
+        }
+        ingredients.saveAll(chosen);
     }
 
     @Transactional(readOnly = true)
