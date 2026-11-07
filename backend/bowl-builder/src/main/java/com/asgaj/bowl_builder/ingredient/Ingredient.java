@@ -17,6 +17,10 @@ public class Ingredient {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    /** Optimistic locking: Hibernate adds "WHERE version = ?" to every update. */
+    @Version
+    private Long version;
+
     private String name;
 
     @Enumerated(EnumType.STRING)

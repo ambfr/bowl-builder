@@ -13,15 +13,17 @@ import java.util.List;
 public class OrderController {
 
     private final OrderService service;
+    private final OrderPlacementService placement;
 
-    public OrderController(OrderService service) {
+    public OrderController(OrderService service, OrderPlacementService placement) {
         this.service = service;
+        this.placement = placement;
     }
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public OrderResponse place(Authentication auth, @Valid @RequestBody BowlRequest request) {
-        return service.place(auth.getName(), request);
+        return placement.place(auth.getName(), request);
     }
 
     @GetMapping

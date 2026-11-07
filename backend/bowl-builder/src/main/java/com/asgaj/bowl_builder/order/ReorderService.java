@@ -5,26 +5,25 @@ import com.asgaj.bowl_builder.ingredient.Category;
 import com.asgaj.bowl_builder.user.UserRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 
+/** Not @Transactional on purpose, so the retry in OrderPlacementService can start fresh transactions. */
 @Service
 public class ReorderService {
 
     private final CustomerOrderRepository orders;
     private final UserRepository users;
-    private final OrderService orderService;
+    private final OrderPlacementService placement;
 
     public ReorderService(CustomerOrderRepository orders, UserRepository users,
-                          OrderService orderService) {
+                          OrderPlacementService placement) {
         this.orders = orders;
         this.users = users;
-        this.orderService = orderService;
+        this.placement = placement;
     }
 
-    @Transactional
     public OrderResponse reorder(String email, Long id) {
         Long userId = users.findByEmail(email)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "User no longer exists"))
@@ -40,8 +39,7 @@ public class ReorderService {
         List<Long> toppings = idsOf(old, Category.TOPPING);
         List<Long> drizzles = idsOf(old, Category.DRIZZLE);
 
-        // Goes through the normal place() path, so current prices and validation apply.
-        return orderService.place(email, new BowlRequest(baseId, toppings, drizzles, old.getSize(), null));
+        return placement.place(email, new BowlRequest(baseId, toppings, drizzles, old.getSize(), null));
     }
 
     private List<Long> idsOf(CustomerOrder order, Category category) {
