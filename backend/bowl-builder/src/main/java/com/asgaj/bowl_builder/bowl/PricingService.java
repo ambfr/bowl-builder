@@ -41,11 +41,34 @@ public class PricingService {
             total = rule.apply(total, request);
         }
 
+        Nutrition nutrition = nutritionFor(base, toppings, drizzles, request.size());
+
         return new BowlPriceResponse(
                 subtotal.setScale(2, RoundingMode.HALF_UP),
-                total.setScale(2, RoundingMode.HALF_UP));
+                total.setScale(2, RoundingMode.HALF_UP),
+                nutrition);}
+    
+    private Nutrition nutritionFor(Ingredient base, List<Ingredient> toppings,
+                                   List<Ingredient> drizzles, Size size) {
+        double factor = size.getMultiplier().doubleValue();
+        int calories = base.getCalories();
+        double protein = base.getProteinG();
+        double sugar = base.getSugarG();
+        for (Ingredient i : toppings) {
+            calories += i.getCalories();
+            protein += i.getProteinG();
+            sugar += i.getSugarG();
+        }
+        for (Ingredient i : drizzles) {
+            calories += i.getCalories();
+            protein += i.getProteinG();
+            sugar += i.getSugarG();
+        }
+        return new Nutrition(
+                (int) Math.round(calories * factor),
+                Math.round(protein * factor * 10) / 10.0,
+                Math.round(sugar * factor * 10) / 10.0);
     }
-
     private List<Ingredient> load(List<Long> ids, Category expected) {
         if (ids == null || ids.isEmpty()) return List.of();
         List<Ingredient> found = ingredientRepository.findAllById(ids);
