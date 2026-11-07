@@ -8,6 +8,7 @@ public record BowlRequest(
         @NotNull Long baseId,
         List<Long> toppingIds,
         List<Long> drizzleIds,
-        @NotNull Size size
+        @NotNull Size size,
+        String promoCode
 ) {
 }
