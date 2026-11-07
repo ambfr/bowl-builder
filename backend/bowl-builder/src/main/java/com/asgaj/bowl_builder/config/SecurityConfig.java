@@ -38,6 +38,8 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.GET, "/api/ingredients").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/bowls/price").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/ingredients").hasRole("ADMIN")
+                .requestMatchers(HttpMethod.PATCH, "/api/orders/*/status").hasAnyRole("STAFF", "ADMIN")
+                .requestMatchers("/api/staff/**").hasAnyRole("STAFF", "ADMIN")
                 .anyRequest().authenticated())
             .exceptionHandling(e -> e
                 .authenticationEntryPoint((req, res, ex) ->

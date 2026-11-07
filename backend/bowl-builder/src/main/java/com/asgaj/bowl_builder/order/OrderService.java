@@ -84,7 +84,7 @@ public class OrderService {
                 .getId();
     }
 
-    private OrderResponse toResponse(CustomerOrder o) {
+    OrderResponse toResponse(CustomerOrder o) {
         List<OrderItemResponse> items = o.getItems().stream()
                 .map(i -> new OrderItemResponse(i.getIngredientId(), i.getName(), i.getCategory(), i.getUnitPrice()))
                 .toList();
