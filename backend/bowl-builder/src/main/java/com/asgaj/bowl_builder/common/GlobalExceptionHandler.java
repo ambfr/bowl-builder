@@ -8,7 +8,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.server.ResponseStatusException;
-
+import org.springframework.dao.ConcurrencyFailureException;
 import java.util.stream.Collectors;
 
 @RestControllerAdvice
@@ -33,5 +33,10 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiError> handleUnreadable(HttpMessageNotReadableException ex) {
         return ResponseEntity.badRequest().body(ApiError.of(400,
                 "Malformed request body (check field names and values, e.g. size must be SMALL, MEDIUM or LARGE)"));
+    }
+    @ExceptionHandler(ConcurrencyFailureException.class)
+    public ResponseEntity<ApiError> handleConcurrency(ConcurrencyFailureException ex) {
+        return ResponseEntity.status(409).body(ApiError.of(409,
+                "Someone else changed this at the same moment, please try again"));
     }
 }

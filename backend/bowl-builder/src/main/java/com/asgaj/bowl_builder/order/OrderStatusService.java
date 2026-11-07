@@ -1,5 +1,7 @@
 package com.asgaj.bowl_builder.order;
 
+import com.asgaj.bowl_builder.ingredient.Ingredient;
+import com.asgaj.bowl_builder.ingredient.IngredientRepository;
 import com.asgaj.bowl_builder.user.UserRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -12,12 +14,14 @@ import java.util.List;
 public class OrderStatusService {
 
     private final CustomerOrderRepository orders;
+    private final IngredientRepository ingredients;
     private final UserRepository users;
     private final OrderService orderService;
 
-    public OrderStatusService(CustomerOrderRepository orders, UserRepository users,
-                              OrderService orderService) {
+    public OrderStatusService(CustomerOrderRepository orders, IngredientRepository ingredients,
+                              UserRepository users, OrderService orderService) {
         this.orders = orders;
+        this.ingredients = ingredients;
         this.users = users;
         this.orderService = orderService;
     }
@@ -62,5 +66,18 @@ public class OrderStatusService {
                     "Cannot move order from " + order.getStatus() + " to " + next);
         }
         order.setStatus(next);
+        if (next == OrderStatus.CANCELLED) {
+            restoreStock(order);
+        }
+    }
+
+    /** Puts one portion of each ingredient back. Runs inside the caller's transaction. */
+    private void restoreStock(CustomerOrder order) {
+        List<Long> ids = order.getItems().stream().map(OrderItem::getIngredientId).toList();
+        List<Ingredient> found = ingredients.findAllById(ids);
+        for (Ingredient i : found) {
+            i.setStock(i.getStock() + 1);
+        }
+        ingredients.saveAll(found);
     }
 }
