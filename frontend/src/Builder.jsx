@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { api } from "./api";
 import { useAuth } from "./auth";
 import BowlPicture from "./BowlPicture";
@@ -59,18 +59,22 @@ function Group({ title, hint, children }) {
 export default function Builder() {
   const { user, token } = useAuth();
   const navigate = useNavigate();
+  // "Edit in builder" on the favorites page passes the saved bowl here.
+  const preset = useLocation().state?.bowl;
 
   const [ingredients, setIngredients] = useState([]);
   const [loadError, setLoadError] = useState("");
-  const [baseId, setBaseId] = useState(null);
-  const [toppingIds, setToppingIds] = useState([]);
-  const [drizzleIds, setDrizzleIds] = useState([]);
-  const [size, setSize] = useState("MEDIUM");
+  const [baseId, setBaseId] = useState(preset?.baseId ?? null);
+  const [toppingIds, setToppingIds] = useState(preset?.toppingIds ?? []);
+  const [drizzleIds, setDrizzleIds] = useState(preset?.drizzleIds ?? []);
+  const [size, setSize] = useState(preset?.size ?? "MEDIUM");
   const [promo, setPromo] = useState("");
   const [pricing, setPricing] = useState(null);
   const [priceError, setPriceError] = useState("");
   const [placing, setPlacing] = useState(false);
   const [orderError, setOrderError] = useState("");
+  const [favName, setFavName] = useState("");
+  const [favMsg, setFavMsg] = useState({ text: "", error: false });
 
   const loadIngredients = useCallback(() => {
     api("/api/ingredients")
@@ -134,6 +138,24 @@ export default function Builder() {
     }
   }
 
+  async function saveFavorite() {
+    if (!favName.trim()) {
+      setFavMsg({ text: "Give your bowl a name first.", error: true });
+      return;
+    }
+    try {
+      await api("/api/favorites", {
+        method: "POST",
+        token,
+        body: { name: favName.trim(), baseId, toppingIds, drizzleIds, size },
+      });
+      setFavMsg({ text: "Saved to your favorites.", error: false });
+      setFavName("");
+    } catch (e) {
+      setFavMsg({ text: e.message, error: true });
+    }
+  }
+
   const base = byId[baseId];
   const toppings = toppingIds.map((id) => byId[id]).filter(Boolean);
   const drizzles = drizzleIds.map((id) => byId[id]).filter(Boolean);
@@ -182,6 +204,33 @@ export default function Builder() {
                 <p role="alert" className="mt-3 text-center text-sm text-red-700">
                   {orderError}
                 </p>
+              )}
+
+              {user && (
+                <div className="mt-6 border-t border-line pt-4">
+                  <div className="flex items-center gap-3">
+                    <input
+                      value={favName}
+                      onChange={(e) => setFavName(e.target.value)}
+                      maxLength={50}
+                      placeholder="Name this bowl"
+                      aria-label="Favorite name"
+                      className="flex-1 border-0 border-b border-line bg-transparent py-2 focus:border-berry focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={saveFavorite}
+                      className="rounded-full border border-line px-4 py-1.5 text-sm font-medium transition hover:border-ink"
+                    >
+                      Save to favorites
+                    </button>
+                  </div>
+                  {favMsg.text && (
+                    <p className={"mt-2 text-sm " + (favMsg.error ? "text-red-700" : "text-berry")}>
+                      {favMsg.text}
+                    </p>
+                  )}
+                </div>
               )}
             </>
           ) : (
