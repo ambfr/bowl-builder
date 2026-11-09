@@ -1,6 +1,7 @@
 package com.asgaj.bowl_builder.order;
 
 import com.asgaj.bowl_builder.bowl.BowlRequest;
+import com.asgaj.bowl_builder.realtime.OrderBroadcaster;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
@@ -14,16 +15,20 @@ public class OrderController {
 
     private final OrderService service;
     private final OrderPlacementService placement;
+    private final OrderBroadcaster broadcaster;
 
-    public OrderController(OrderService service, OrderPlacementService placement) {
+    public OrderController(OrderService service, OrderPlacementService placement, OrderBroadcaster broadcaster) {
         this.service = service;
         this.placement = placement;
+        this.broadcaster = broadcaster;
     }
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public OrderResponse place(Authentication auth, @Valid @RequestBody BowlRequest request) {
-        return placement.place(auth.getName(), request);
+        OrderResponse placed = placement.place(auth.getName(), request);
+        broadcaster.publish(placed); // the transaction has already committed here
+        return placed;
     }
 
     @GetMapping
