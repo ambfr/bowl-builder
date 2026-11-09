@@ -2,17 +2,20 @@ import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api } from "./api";
 import { useAuth } from "./auth";
+import { Btn, Loading, useToast } from "./ui";
 
 const rupees = (n) => "Rs " + Number(n).toFixed(2);
 
 export default function Favorites() {
   const { user, token } = useAuth();
   const navigate = useNavigate();
+  const toast = useToast();
   const [favorites, setFavorites] = useState([]);
   const [names, setNames] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [busyId, setBusyId] = useState(null);
+  const [busy, setBusy] = useState(null); // { id, action }
+  const [confirmId, setConfirmId] = useState(null);
   const [rowErrors, setRowErrors] = useState({});
 
   const load = useCallback(async () => {
@@ -35,8 +38,11 @@ export default function Favorites() {
     if (token) load();
   }, [token, load]);
 
+  const isBusy = (f, action) => busy?.id === f.id && busy.action === action;
+  const anyBusy = (f) => busy?.id === f.id;
+
   async function orderNow(fav) {
-    setBusyId(fav.id);
+    setBusy({ id: fav.id, action: "order" });
     setRowErrors((prev) => ({ ...prev, [fav.id]: "" }));
     try {
       await api("/api/orders", {
@@ -50,23 +56,26 @@ export default function Favorites() {
           promoCode: null,
         },
       });
+      toast("Order placed.");
       navigate("/orders");
     } catch (e) {
       setRowErrors((prev) => ({ ...prev, [fav.id]: e.message }));
     } finally {
-      setBusyId(null);
+      setBusy(null);
     }
   }
 
   async function remove(fav) {
-    setBusyId(fav.id);
+    setBusy({ id: fav.id, action: "remove" });
     try {
       await api("/api/favorites/" + fav.id, { method: "DELETE", token });
+      toast('Removed "' + fav.name + '".');
+      setConfirmId(null);
       await load();
     } catch (e) {
       setRowErrors((prev) => ({ ...prev, [fav.id]: e.message }));
     } finally {
-      setBusyId(null);
+      setBusy(null);
     }
   }
 
@@ -89,7 +98,7 @@ export default function Favorites() {
       <h2 className="font-display text-4xl tracking-tight">Favorites</h2>
 
       {error && <p className="mt-6 text-red-700">{error}</p>}
-      {loading && <p className="mt-6 text-ink/50">Loading...</p>}
+      {loading && <div className="mt-6"><Loading text="Loading your favorites..." /></div>}
 
       {!loading && !error && favorites.length === 0 && (
         <p className="mt-6 text-ink/60">
@@ -121,30 +130,37 @@ export default function Favorites() {
                 {f.pricing ? " - " + f.pricing.nutrition.calories + " kcal" : ""}
               </p>
               <p className="mt-3">{items}</p>
-              <div className="mt-4 flex flex-wrap gap-3">
-                <button
-                  type="button"
-                  disabled={busyId === f.id || !f.pricing}
-                  onClick={() => orderNow(f)}
-                  className="rounded-full bg-ink px-4 py-1.5 text-sm font-medium text-white transition disabled:opacity-50"
-                >
-                  Order now
-                </button>
-                <button
-                  type="button"
-                  onClick={() => navigate("/", { state: { bowl: f } })}
-                  className="rounded-full border border-line px-4 py-1.5 text-sm font-medium transition hover:border-ink"
-                >
-                  Edit in builder
-                </button>
-                <button
-                  type="button"
-                  disabled={busyId === f.id}
-                  onClick={() => remove(f)}
-                  className="px-2 py-1.5 text-sm font-medium text-ink/60 hover:text-red-700 disabled:opacity-50"
-                >
-                  Remove
-                </button>
+
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                {confirmId === f.id ? (
+                  <>
+                    <span className="text-sm text-ink/60">Remove this bowl?</span>
+                    <Btn variant="berry" busy={isBusy(f, "remove")} busyLabel="Removing..." onClick={() => remove(f)}>
+                      Yes, remove
+                    </Btn>
+                    <Btn variant="outline" disabled={anyBusy(f)} onClick={() => setConfirmId(null)}>
+                      Keep
+                    </Btn>
+                  </>
+                ) : (
+                  <>
+                    <Btn
+                      variant="dark"
+                      busy={isBusy(f, "order")}
+                      busyLabel="Placing order..."
+                      disabled={anyBusy(f) || !f.pricing}
+                      onClick={() => orderNow(f)}
+                    >
+                      Order now
+                    </Btn>
+                    <Btn variant="outline" onClick={() => navigate("/", { state: { bowl: f } })}>
+                      Edit in builder
+                    </Btn>
+                    <Btn variant="text" disabled={anyBusy(f)} onClick={() => setConfirmId(f.id)}>
+                      Remove
+                    </Btn>
+                  </>
+                )}
               </div>
               {rowErrors[f.id] && (
                 <p role="alert" className="mt-3 text-sm text-red-700">

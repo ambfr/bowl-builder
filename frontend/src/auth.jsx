@@ -24,17 +24,22 @@ function load() {
   return null;
 }
 
+function save(value) {
+  try {
+    if (value) localStorage.setItem(KEY, JSON.stringify(value));
+    else localStorage.removeItem(KEY);
+  } catch {
+    // keep working for this session even if storage is blocked
+  }
+}
+
 export function AuthProvider({ children }) {
   const [auth, setAuth] = useState(load);
 
   async function login(email, password) {
     const res = await api("/api/auth/login", { method: "POST", body: { email, password } });
     const next = { token: res.token, user: res.user };
-    try {
-      localStorage.setItem(KEY, JSON.stringify(next));
-    } catch {
-      // keep working for this session even if storage is blocked
-    }
+    save(next);
     setAuth(next);
   }
 
@@ -43,17 +48,22 @@ export function AuthProvider({ children }) {
     await login(email, password);
   }
 
+  function updateUser(user) {
+    if (!auth) return;
+    const next = { ...auth, user };
+    save(next);
+    setAuth(next);
+  }
+
   function logout() {
-    try {
-      localStorage.removeItem(KEY);
-    } catch {
-      // ignore
-    }
+    save(null);
     setAuth(null);
   }
 
   return (
-    <AuthContext.Provider value={{ user: auth?.user ?? null, token: auth?.token ?? null, login, register, logout }}>
+    <AuthContext.Provider
+      value={{ user: auth?.user ?? null, token: auth?.token ?? null, login, register, updateUser, logout }}
+    >
       {children}
     </AuthContext.Provider>
   );

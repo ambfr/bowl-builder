@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "./api";
 import { useAuth } from "./auth";
+import { Btn, Loading, useToast } from "./ui";
 
 const STEPS = ["PLACED", "PREPARING", "READY", "PICKED_UP"];
 const LABEL = {
@@ -21,14 +22,10 @@ function Progress({ status }) {
   }
   const current = STEPS.indexOf(status);
   return (
-    <ol className="flex items-center gap-2 text-sm" aria-label={"Status: " + LABEL[status]}>
+    <ol className="flex flex-wrap items-center gap-2 text-sm" aria-label={"Status: " + LABEL[status]}>
       {STEPS.map((s, idx) => (
         <li key={s} className="flex items-center gap-2">
-          <span
-            className={
-              "h-2.5 w-2.5 rounded-full " + (idx <= current ? "bg-berry" : "bg-line")
-            }
-          />
+          <span className={"h-2.5 w-2.5 rounded-full " + (idx <= current ? "bg-berry" : "bg-line")} />
           <span className={idx === current ? "font-medium" : "text-ink/50"}>{LABEL[s]}</span>
           {idx < STEPS.length - 1 && <span className="h-px w-4 bg-line" />}
         </li>
@@ -37,7 +34,8 @@ function Progress({ status }) {
   );
 }
 
-function OrderCard({ order, busy, error, onCancel, onReorder }) {
+function OrderCard({ order, busyAction, error, onCancel, onReorder }) {
+  const anyBusy = Boolean(busyAction);
   return (
     <article className="border-b border-line py-6">
       <div className="flex items-baseline justify-between gap-4">
@@ -54,23 +52,25 @@ function OrderCard({ order, busy, error, onCancel, onReorder }) {
       </div>
       <div className="mt-4 flex gap-3">
         {order.status === "PLACED" && (
-          <button
-            type="button"
-            disabled={busy}
+          <Btn
+            variant="outline"
+            busy={busyAction === "cancel"}
+            busyLabel="Cancelling..."
+            disabled={anyBusy}
             onClick={() => onCancel(order.id)}
-            className="rounded-full border border-line px-4 py-1.5 text-sm font-medium transition hover:border-ink disabled:opacity-50"
           >
             Cancel order
-          </button>
+          </Btn>
         )}
-        <button
-          type="button"
-          disabled={busy}
+        <Btn
+          variant="dark"
+          busy={busyAction === "reorder"}
+          busyLabel="Placing order..."
+          disabled={anyBusy}
           onClick={() => onReorder(order.id)}
-          className="rounded-full bg-ink px-4 py-1.5 text-sm font-medium text-white transition disabled:opacity-50"
         >
           Order again
-        </button>
+        </Btn>
       </div>
       {error && (
         <p role="alert" className="mt-3 text-sm text-red-700">
@@ -83,10 +83,12 @@ function OrderCard({ order, busy, error, onCancel, onReorder }) {
 
 export default function Orders() {
   const { user, token } = useAuth();
+  const toast = useToast();
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
-  const [busyId, setBusyId] = useState(null);
+  const [busy, setBusy] = useState(null); // { id, action }
   const [rowErrors, setRowErrors] = useState({});
 
   const load = useCallback(async () => {
@@ -104,16 +106,23 @@ export default function Orders() {
     if (token) load();
   }, [token, load]);
 
-  async function act(id, path) {
-    setBusyId(id);
+  async function refresh() {
+    setRefreshing(true);
+    await load();
+    setRefreshing(false);
+  }
+
+  async function act(id, action, path) {
+    setBusy({ id, action });
     setRowErrors((prev) => ({ ...prev, [id]: "" }));
     try {
-      await api(path, { method: "POST", token });
+      const res = await api(path, { method: "POST", token });
+      toast(action === "cancel" ? "Order #" + id + " cancelled." : "Order #" + res.id + " placed.");
       await load();
     } catch (e) {
       setRowErrors((prev) => ({ ...prev, [id]: e.message }));
     } finally {
-      setBusyId(null);
+      setBusy(null);
     }
   }
 
@@ -135,13 +144,13 @@ export default function Orders() {
     <main className="mx-auto max-w-2xl px-6 py-12">
       <div className="flex items-baseline justify-between">
         <h2 className="font-display text-4xl tracking-tight">Your orders</h2>
-        <button type="button" onClick={load} className="text-sm font-medium text-berry hover:underline">
+        <Btn variant="text" busy={refreshing} busyLabel="Refreshing..." onClick={refresh} className="!text-berry">
           Refresh
-        </button>
+        </Btn>
       </div>
 
       {error && <p className="mt-6 text-red-700">{error}</p>}
-      {loading && <p className="mt-6 text-ink/50">Loading...</p>}
+      {loading && <div className="mt-6"><Loading text="Loading your orders..." /></div>}
 
       {!loading && !error && orders.length === 0 && (
         <p className="mt-6 text-ink/60">
@@ -157,10 +166,10 @@ export default function Orders() {
           <OrderCard
             key={o.id}
             order={o}
-            busy={busyId === o.id}
+            busyAction={busy?.id === o.id ? busy.action : null}
             error={rowErrors[o.id]}
-            onCancel={(id) => act(id, "/api/orders/" + id + "/cancel")}
-            onReorder={(id) => act(id, "/api/orders/" + id + "/reorder")}
+            onCancel={(id) => act(id, "cancel", "/api/orders/" + id + "/cancel")}
+            onReorder={(id) => act(id, "reorder", "/api/orders/" + id + "/reorder")}
           />
         ))}
       </div>

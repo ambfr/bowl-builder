@@ -23,7 +23,9 @@ export default function Layout() {
                   Admin
                 </Link>
               )}
-              <span className="text-ink/60">Hi, {user.name}</span>
+              <Link to="/profile" className="text-ink/70 hover:text-ink">
+                Profile ({user.name})
+              </Link>
               <button type="button" onClick={logout} className="font-medium text-berry hover:underline">
                 Sign out
               </button>

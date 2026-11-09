@@ -4,6 +4,7 @@ import { api } from "./api";
 import { useAuth } from "./auth";
 import BowlPicture from "./BowlPicture";
 import { swatchFor } from "./palette";
+import { Btn, Loading, Spinner, useToast } from "./ui";
 
 const SIZES = ["SMALL", "MEDIUM", "LARGE"];
 const rupees = (n) => "Rs " + Number(n).toFixed(2);
@@ -59,10 +60,12 @@ function Group({ title, hint, children }) {
 export default function Builder() {
   const { user, token } = useAuth();
   const navigate = useNavigate();
+  const toast = useToast();
   // "Edit in builder" on the favorites page passes the saved bowl here.
   const preset = useLocation().state?.bowl;
 
   const [ingredients, setIngredients] = useState([]);
+  const [loadingIngredients, setLoadingIngredients] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [baseId, setBaseId] = useState(preset?.baseId ?? null);
   const [toppingIds, setToppingIds] = useState(preset?.toppingIds ?? []);
@@ -70,16 +73,21 @@ export default function Builder() {
   const [size, setSize] = useState(preset?.size ?? "MEDIUM");
   const [promo, setPromo] = useState("");
   const [pricing, setPricing] = useState(null);
+  const [pricingBusy, setPricingBusy] = useState(false);
   const [priceError, setPriceError] = useState("");
   const [placing, setPlacing] = useState(false);
   const [orderError, setOrderError] = useState("");
   const [favName, setFavName] = useState("");
-  const [favMsg, setFavMsg] = useState({ text: "", error: false });
+  const [savingFav, setSavingFav] = useState(false);
 
   const loadIngredients = useCallback(() => {
     api("/api/ingredients")
-      .then((list) => setIngredients(list.sort((a, b) => a.id - b.id)))
-      .catch((e) => setLoadError(e.message));
+      .then((list) => {
+        setIngredients(list.sort((a, b) => a.id - b.id));
+        setLoadError("");
+      })
+      .catch((e) => setLoadError(e.message))
+      .finally(() => setLoadingIngredients(false));
   }, []);
 
   useEffect(() => {
@@ -94,23 +102,34 @@ export default function Builder() {
     if (!baseId) {
       setPricing(null);
       setPriceError("");
+      setPricingBusy(false);
       return;
     }
+    let cancelled = false;
     const timer = setTimeout(() => {
+      setPricingBusy(true);
       api("/api/bowls/price", {
         method: "POST",
         body: { baseId, toppingIds, drizzleIds, size, promoCode: promo.trim() || null },
       })
         .then((p) => {
+          if (cancelled) return;
           setPricing(p);
           setPriceError("");
         })
         .catch((e) => {
+          if (cancelled) return;
           setPricing(null);
           setPriceError(e.message);
+        })
+        .finally(() => {
+          if (!cancelled) setPricingBusy(false);
         });
     }, 250);
-    return () => clearTimeout(timer);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, [baseId, toppingIds, drizzleIds, size, promo]);
 
   const toggle = (list, setList, id) =>
@@ -129,6 +148,7 @@ export default function Builder() {
         token,
         body: { baseId, toppingIds, drizzleIds, size, promoCode: promo.trim() || null },
       });
+      toast("Order placed.");
       navigate("/orders");
     } catch (e) {
       setOrderError(e.message);
@@ -139,20 +159,24 @@ export default function Builder() {
   }
 
   async function saveFavorite() {
-    if (!favName.trim()) {
-      setFavMsg({ text: "Give your bowl a name first.", error: true });
+    const name = favName.trim();
+    if (!name) {
+      toast("Give your bowl a name first.", "error");
       return;
     }
+    setSavingFav(true);
     try {
       await api("/api/favorites", {
         method: "POST",
         token,
-        body: { name: favName.trim(), baseId, toppingIds, drizzleIds, size },
+        body: { name, baseId, toppingIds, drizzleIds, size },
       });
-      setFavMsg({ text: "Saved to your favorites.", error: false });
+      toast('Saved "' + name + '" to your favorites.');
       setFavName("");
     } catch (e) {
-      setFavMsg({ text: e.message, error: true });
+      toast(e.message, "error");
+    } finally {
+      setSavingFav(false);
     }
   }
 
@@ -173,8 +197,12 @@ export default function Builder() {
           {pricing ? (
             <>
               <div className="flex items-end justify-between border-t border-line pt-4">
-                <span className="font-display text-xl text-ink/70">Total</span>
-                <span className="font-display text-5xl tracking-tight">{rupees(pricing.total)}</span>
+                <span className="flex items-center gap-2 font-display text-xl text-ink/70">
+                  Total {pricingBusy && <Spinner className="h-4 w-4 text-berry" />}
+                </span>
+                <span className={"font-display text-5xl tracking-tight transition-opacity " + (pricingBusy ? "opacity-50" : "")}>
+                  {rupees(pricing.total)}
+                </span>
               </div>
               <div className="mt-4 grid grid-cols-3 divide-x divide-line text-center">
                 <div>
@@ -192,14 +220,16 @@ export default function Builder() {
               </div>
               {discounted && <p className="mt-3 text-center text-sm text-berry">Promo code applied</p>}
 
-              <button
-                type="button"
+              <Btn
+                variant="berry"
+                size="lg"
+                className="mt-6"
+                busy={placing}
+                busyLabel="Placing your order..."
                 onClick={placeOrder}
-                disabled={placing}
-                className="mt-6 w-full rounded-full bg-berry py-3.5 font-medium text-white transition hover:opacity-90 disabled:opacity-50"
               >
-                {placing ? "Placing order..." : user ? "Place order" : "Sign in to order"}
-              </button>
+                {user ? "Place order" : "Sign in to order"}
+              </Btn>
               {orderError && (
                 <p role="alert" className="mt-3 text-center text-sm text-red-700">
                   {orderError}
@@ -207,36 +237,26 @@ export default function Builder() {
               )}
 
               {user && (
-                <div className="mt-6 border-t border-line pt-4">
-                  <div className="flex items-center gap-3">
-                    <input
-                      value={favName}
-                      onChange={(e) => setFavName(e.target.value)}
-                      maxLength={50}
-                      placeholder="Name this bowl"
-                      aria-label="Favorite name"
-                      className="flex-1 border-0 border-b border-line bg-transparent py-2 focus:border-berry focus:outline-none"
-                    />
-                    <button
-                      type="button"
-                      onClick={saveFavorite}
-                      className="rounded-full border border-line px-4 py-1.5 text-sm font-medium transition hover:border-ink"
-                    >
-                      Save to favorites
-                    </button>
-                  </div>
-                  {favMsg.text && (
-                    <p className={"mt-2 text-sm " + (favMsg.error ? "text-red-700" : "text-berry")}>
-                      {favMsg.text}
-                    </p>
-                  )}
+                <div className="mt-6 flex items-center gap-3 border-t border-line pt-4">
+                  <input
+                    value={favName}
+                    onChange={(e) => setFavName(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && !savingFav && saveFavorite()}
+                    maxLength={50}
+                    placeholder="Name this bowl"
+                    aria-label="Favorite name"
+                    className="flex-1 border-0 border-b border-line bg-transparent py-2 focus:border-berry focus:outline-none"
+                  />
+                  <Btn variant="outline" busy={savingFav} busyLabel="Saving..." onClick={saveFavorite}>
+                    Save to favorites
+                  </Btn>
                 </div>
               )}
             </>
           ) : (
             !priceError && (
               <p className="border-t border-line pt-4 text-center text-ink/50">
-                Pick a base and your price will appear here.
+                {pricingBusy ? "Working out your price..." : "Pick a base and your price will appear here."}
               </p>
             )
           )}
@@ -245,63 +265,68 @@ export default function Builder() {
 
       <div className="space-y-9">
         {loadError && <p className="text-red-700">Could not load ingredients: {loadError}</p>}
+        {loadingIngredients && <Loading text="Loading ingredients..." />}
 
-        <Group title="Base" hint="Pick one">
-          {byCategory("BASE").map((i) => (
-            <Row key={i.id} item={i} selected={baseId === i.id} onClick={() => setBaseId(i.id)} />
-          ))}
-        </Group>
+        {!loadingIngredients && (
+          <>
+            <Group title="Base" hint="Pick one">
+              {byCategory("BASE").map((i) => (
+                <Row key={i.id} item={i} selected={baseId === i.id} onClick={() => setBaseId(i.id)} />
+              ))}
+            </Group>
 
-        <Group title="Toppings" hint="As many as you like">
-          {byCategory("TOPPING").map((i) => (
-            <Row
-              key={i.id}
-              item={i}
-              selected={toppingIds.includes(i.id)}
-              onClick={() => toggle(toppingIds, setToppingIds, i.id)}
-            />
-          ))}
-        </Group>
+            <Group title="Toppings" hint="As many as you like">
+              {byCategory("TOPPING").map((i) => (
+                <Row
+                  key={i.id}
+                  item={i}
+                  selected={toppingIds.includes(i.id)}
+                  onClick={() => toggle(toppingIds, setToppingIds, i.id)}
+                />
+              ))}
+            </Group>
 
-        <Group title="Drizzles" hint="As many as you like">
-          {byCategory("DRIZZLE").map((i) => (
-            <Row
-              key={i.id}
-              item={i}
-              selected={drizzleIds.includes(i.id)}
-              onClick={() => toggle(drizzleIds, setDrizzleIds, i.id)}
-            />
-          ))}
-        </Group>
+            <Group title="Drizzles" hint="As many as you like">
+              {byCategory("DRIZZLE").map((i) => (
+                <Row
+                  key={i.id}
+                  item={i}
+                  selected={drizzleIds.includes(i.id)}
+                  onClick={() => toggle(drizzleIds, setDrizzleIds, i.id)}
+                />
+              ))}
+            </Group>
 
-        <Group title="Size">
-          <div className="mt-2 inline-flex rounded-full border border-line bg-white p-1">
-            {SIZES.map((s) => (
-              <button
-                key={s}
-                type="button"
-                onClick={() => setSize(s)}
-                aria-pressed={size === s}
-                className={
-                  "rounded-full px-5 py-1.5 text-sm font-medium transition " +
-                  (size === s ? "bg-ink text-white" : "text-ink/70 hover:text-ink")
-                }
-              >
-                {s[0] + s.slice(1).toLowerCase()}
-              </button>
-            ))}
-          </div>
-        </Group>
+            <Group title="Size">
+              <div className="mt-2 inline-flex rounded-full border border-line bg-white p-1">
+                {SIZES.map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => setSize(s)}
+                    aria-pressed={size === s}
+                    className={
+                      "rounded-full px-5 py-1.5 text-sm font-medium transition " +
+                      (size === s ? "bg-ink text-white" : "text-ink/70 hover:text-ink")
+                    }
+                  >
+                    {s[0] + s.slice(1).toLowerCase()}
+                  </button>
+                ))}
+              </div>
+            </Group>
 
-        <Group title="Promo code">
-          <input
-            value={promo}
-            onChange={(e) => setPromo(e.target.value)}
-            placeholder="Have a code?"
-            aria-label="Promo code"
-            className="mt-2 w-full border-0 border-b border-line bg-transparent py-2 uppercase placeholder:normal-case placeholder:text-ink/40 focus:border-berry focus:outline-none"
-          />
-        </Group>
+            <Group title="Promo code">
+              <input
+                value={promo}
+                onChange={(e) => setPromo(e.target.value)}
+                placeholder="Have a code?"
+                aria-label="Promo code"
+                className="mt-2 w-full border-0 border-b border-line bg-transparent py-2 uppercase placeholder:normal-case placeholder:text-ink/40 focus:border-berry focus:outline-none"
+              />
+            </Group>
+          </>
+        )}
       </div>
     </main>
   );

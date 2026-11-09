@@ -3,62 +3,55 @@ import { Link } from "react-router-dom";
 import { api } from "./api";
 import { useAuth } from "./auth";
 import { swatchFor } from "./palette";
+import { Btn, Loading, useToast } from "./ui";
 
 const CATEGORIES = ["BASE", "TOPPING", "DRIZZLE"];
 const rupees = (n) => "Rs " + Number(n).toFixed(2);
 
 function StockRow({ item, token, onSaved }) {
+  const toast = useToast();
   const [value, setValue] = useState(String(item.stock));
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
   const valid = /^\d+$/.test(value);
   const changed = value !== String(item.stock);
 
   async function save() {
     setBusy(true);
-    setError("");
     try {
       await api("/api/ingredients/" + item.id + "/stock", {
         method: "PATCH",
         token,
         body: { stock: Number(value) },
       });
+      toast(item.name + " stock set to " + value + ".");
       await onSaved();
     } catch (e) {
-      setError(e.message);
+      toast(e.message, "error");
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <div className="border-b border-line py-3">
-      <div className="flex items-center gap-3">
-        <span
-          className="h-3.5 w-3.5 shrink-0 rounded-full ring-1 ring-black/10"
-          style={{ background: swatchFor(item.name) }}
-        />
-        <span className="flex-1 font-medium">{item.name}</span>
-        <span className="hidden text-sm text-ink/50 sm:inline">{rupees(item.price)}</span>
-        {item.stock < 10 && <span className="text-sm text-berry">Low stock</span>}
-        <input
-          type="number"
-          min="0"
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          aria-label={"Stock for " + item.name}
-          className="w-20 rounded-lg border border-line bg-white px-2 py-1 text-right"
-        />
-        <button
-          type="button"
-          disabled={busy || !changed || !valid}
-          onClick={save}
-          className="rounded-full bg-ink px-4 py-1 text-sm font-medium text-white transition disabled:opacity-30"
-        >
-          Save
-        </button>
-      </div>
-      {error && <p className="mt-2 text-sm text-red-700">{error}</p>}
+    <div className="flex items-center gap-3 border-b border-line py-3">
+      <span
+        className="h-3.5 w-3.5 shrink-0 rounded-full ring-1 ring-black/10"
+        style={{ background: swatchFor(item.name) }}
+      />
+      <span className="flex-1 font-medium">{item.name}</span>
+      <span className="hidden text-sm text-ink/50 sm:inline">{rupees(item.price)}</span>
+      {item.stock < 10 && <span className="text-sm text-berry">Low stock</span>}
+      <input
+        type="number"
+        min="0"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        aria-label={"Stock for " + item.name}
+        className="w-20 rounded-lg border border-line bg-white px-2 py-1 text-right"
+      />
+      <Btn busy={busy} busyLabel="Saving..." disabled={!changed || !valid} onClick={save}>
+        Save
+      </Btn>
     </div>
   );
 }
@@ -82,10 +75,11 @@ const EMPTY = { name: "", category: "TOPPING", price: "", calories: "", proteinG
 
 export default function Admin() {
   const { user, token } = useAuth();
+  const toast = useToast();
   const [ingredients, setIngredients] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [form, setForm] = useState(EMPTY);
-  const [formMsg, setFormMsg] = useState({ text: "", error: false });
   const [adding, setAdding] = useState(false);
 
   const load = useCallback(async () => {
@@ -96,6 +90,8 @@ export default function Admin() {
       setError("");
     } catch (e) {
       setError(e.message);
+    } finally {
+      setLoading(false);
     }
   }, []);
 
@@ -117,17 +113,17 @@ export default function Admin() {
     };
     const numbers = [body.price, body.calories, body.proteinG, body.sugarG, body.stock];
     if (!body.name || numbers.some((n) => !Number.isFinite(n) || n < 0)) {
-      setFormMsg({ text: "Enter a name and a valid number in every other field.", error: true });
+      toast("Enter a name and a valid number in every other field.", "error");
       return;
     }
     setAdding(true);
     try {
       await api("/api/ingredients", { method: "POST", token, body });
-      setFormMsg({ text: body.name + " added.", error: false });
+      toast(body.name + " added.");
       setForm(EMPTY);
       await load();
     } catch (e) {
-      setFormMsg({ text: e.message, error: true });
+      toast(e.message, "error");
     } finally {
       setAdding(false);
     }
@@ -153,6 +149,7 @@ export default function Admin() {
       <p className="mt-2 text-ink/60">Set the exact number of portions in stock. Changes show up in the builder straight away.</p>
 
       {error && <p className="mt-6 text-red-700">{error}</p>}
+      {loading && <div className="mt-6"><Loading text="Loading ingredients..." /></div>}
 
       <div className="mt-8 border-t border-line">
         {ingredients.map((i) => (
@@ -183,17 +180,9 @@ export default function Admin() {
         <Field label="Sugar (g)" type="number" value={form.sugarG} onChange={set("sugarG")} />
         <Field label="Starting stock" type="number" value={form.stock} onChange={set("stock")} />
       </div>
-      <button
-        type="button"
-        disabled={adding}
-        onClick={addIngredient}
-        className="mt-6 rounded-full bg-berry px-6 py-2.5 font-medium text-white transition disabled:opacity-50"
-      >
-        {adding ? "Adding..." : "Add ingredient"}
-      </button>
-      {formMsg.text && (
-        <p className={"mt-3 text-sm " + (formMsg.error ? "text-red-700" : "text-berry")}>{formMsg.text}</p>
-      )}
+      <Btn variant="berry" size="md" className="mt-6" busy={adding} busyLabel="Adding..." onClick={addIngredient}>
+        Add ingredient
+      </Btn>
     </main>
   );
 }
