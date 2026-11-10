@@ -1,0 +1,7 @@
+target
+config/application.properties
+app.log
+.git
+.idea
+.vscode
+*.iml
