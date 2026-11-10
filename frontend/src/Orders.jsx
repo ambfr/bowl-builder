@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "./api";
 import { useAuth } from "./auth";
+import { LiveBadge, useLiveOrders } from "./live";
 import { Btn, Loading, useToast } from "./ui";
 
 const STEPS = ["PLACED", "PREPARING", "READY", "PICKED_UP"];
@@ -106,6 +107,21 @@ export default function Orders() {
     if (token) load();
   }, [token, load]);
 
+  // Live updates: replace the order if we have it, otherwise add it at the top.
+  const connected = useLiveOrders(
+    token,
+    "/user/queue/orders",
+    (o) => {
+      setOrders((prev) =>
+        prev.some((x) => x.id === o.id) ? prev.map((x) => (x.id === o.id ? o : x)) : [o, ...prev]
+      );
+      if (o.status !== "PLACED" && o.status !== "CANCELLED") {
+        toast("Order #" + o.id + " is now " + LABEL[o.status].toLowerCase() + ".");
+      }
+    },
+    load
+  );
+
   async function refresh() {
     setRefreshing(true);
     await load();
@@ -144,9 +160,12 @@ export default function Orders() {
     <main className="mx-auto max-w-2xl px-6 py-12">
       <div className="flex items-baseline justify-between">
         <h2 className="font-display text-4xl tracking-tight">Your orders</h2>
-        <Btn variant="text" busy={refreshing} busyLabel="Refreshing..." onClick={refresh} className="!text-berry">
-          Refresh
-        </Btn>
+        <div className="flex items-baseline gap-5">
+          <LiveBadge connected={connected} />
+          <Btn variant="text" busy={refreshing} busyLabel="Refreshing..." onClick={refresh} className="!text-berry">
+            Refresh
+          </Btn>
+        </div>
       </div>
 
       {error && <p className="mt-6 text-red-700">{error}</p>}

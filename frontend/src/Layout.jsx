@@ -3,6 +3,7 @@ import { useAuth } from "./auth";
 
 export default function Layout() {
   const { user, logout } = useAuth();
+  const isStaff = user && (user.role === "STAFF" || user.role === "ADMIN");
   return (
     <div className="min-h-screen">
       <header className="mx-auto flex max-w-6xl flex-wrap items-baseline justify-between gap-y-2 px-6 pt-8">
@@ -18,6 +19,11 @@ export default function Layout() {
               <Link to="/orders" className="text-ink/70 hover:text-ink">
                 My orders
               </Link>
+              {isStaff && (
+                <Link to="/kitchen" className="text-ink/70 hover:text-ink">
+                  Kitchen
+                </Link>
+              )}
               {user.role === "ADMIN" && (
                 <Link to="/admin" className="text-ink/70 hover:text-ink">
                   Admin
