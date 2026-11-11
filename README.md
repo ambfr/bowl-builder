@@ -136,6 +136,9 @@ The frontend runs on http://localhost:5173 and the API on http://localhost:8080.
 
 **With Docker:** copy `.env.example` to `.env`, fill it in, and run `docker compose up --build`.
 
+## Database
+
+PostgreSQL on Supabase, with row level security on every table (the API connects as the `postgres` role, so the public REST API can reach nothing). Tables are created by Hibernate. The `docs/sql` folder has the setup script, admin helpers and reporting queries such as revenue per day and most popular ingredients. See [docs/sql](docs/sql/README.md).
 ## Tradeoffs and what I would do next
 
 - Orders and stock use optimistic locking. If contention on a single hot ingredient grew very large, a conditional `UPDATE ... SET stock = stock - 1 WHERE stock > 0` would avoid retries.
